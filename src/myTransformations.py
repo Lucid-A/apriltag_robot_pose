@@ -5,34 +5,43 @@ from transforms3d import quaternions as quat
 
 from std_msgs.msg import Header
 from geometry_msgs.msg import PoseStamped, TransformStamped
-from apriltag_ros.msg import AprilTagDetection, AprilTagDetectionArray
+#from apriltag_ros.msg import AprilTagDetection, AprilTagDetectionArray
 
-def inverseTransform(tf):
+def TransformMsg2Mat(tf):
     q = tf.transform.rotation
     t = tf.transform.translation
     R = quat.quat2mat([q.w, q.x,q.y, q.z])
     M = np.hstack((R,[[t.x],[t.y],[t.z]]))
     M = np.vstack((M,[0,0,0,1]))
-    inv_M = np.linalg.inv(M)
+    return M
 
-    inv_R = inv_M[0:3,0:3]
-    inv_t = inv_M[0:3,3]
-    inv_q = quat.mat2quat(inv_R)
+def TransformMat2Msg(mat):
+    tf = TransformStamped()
+
+    R = mat[0:3,0:3]
+    t = mat[0:3,3]
+    q = quat.mat2quat(R)
+
+    tf.transform.rotation.w = q[0]
+    tf.transform.rotation.x = q[1]
+    tf.transform.rotation.y = q[2]
+    tf.transform.rotation.z = q[3]
     
-    inv = TransformStamped()
+    tf.transform.translation.x = t[0]
+    tf.transform.translation.y = t[1]
+    tf.transform.translation.z = t[2]
+    
+    return tf
+
+def inverseTransform(tf):
+    M = TransformMsg2Mat(tf)
+    inv_M = np.linalg.inv(M)
+    inv = TransformMat2Msg(inv_M)
+
     inv.header.seq = tf.header.seq
     inv.header.stamp = tf.header.stamp
     inv.child_frame_id = tf.header.frame_id
     inv.header.frame_id = tf.child_frame_id
-    
-    inv.transform.rotation.w = inv_q[0]
-    inv.transform.rotation.x = inv_q[1]
-    inv.transform.rotation.y = inv_q[2]
-    inv.transform.rotation.z = inv_q[3]
-    
-    inv.transform.translation.x = inv_t[0]
-    inv.transform.translation.y = inv_t[1]
-    inv.transform.translation.z = inv_t[2]
     
     return inv
 
