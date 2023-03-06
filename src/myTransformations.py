@@ -3,6 +3,7 @@
 import numpy as np
 from transforms3d import quaternions as quat
 
+import rospy as ros
 from std_msgs.msg import Header
 from geometry_msgs.msg import PoseStamped, TransformStamped
 #from apriltag_ros.msg import AprilTagDetection, AprilTagDetectionArray
@@ -15,8 +16,14 @@ def TransformMsg2Mat(tf):
     M = np.vstack((M,[0,0,0,1]))
     return M
 
-def TransformMat2Msg(mat):
+def TransformMat2Msg(mat, frame_id=None, child_frame_id=None, now=True):
     tf = TransformStamped()
+    if now:
+        tf.header.stamp = ros.Time.now()
+    if frame_id is not None:
+        tf.header.frame_id = frame_id
+    if child_frame_id is not None:
+        tf.child_frame_id = child_frame_id
 
     R = mat[0:3,0:3]
     t = mat[0:3,3]
@@ -79,3 +86,7 @@ def AprilTagDetection2PoseStamped(tag):
     
     return pose
     
+def AprilTagDetection2Transform(tag, child_frame_id):
+    pose = AprilTagDetection2PoseStamped(tag)
+    tf = PoseStamped2Transform(pose, child_frame_id)
+    return tf
