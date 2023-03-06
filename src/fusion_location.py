@@ -33,65 +33,66 @@ class FusionLocation:
         self.buffer = tf2.Buffer()
         self.listener = tf2.TransformListener(self.buffer)
         self.broadcaster = tf2.TransformBroadcaster()
+        self.static_broadcaster = tf2.StaticTransformBroadcaster()
 
         self.pub = ros.Publisher("/pose/fusion", PoseStamped, queue_size=10)
 
         self.sub_odom = mf.Subscriber("/pose/robot_pose_ekf", PoseStamped)
         self.sub_tags = mf.Subscriber("/tag_detections", AprilTagDetectionArray)
         
-        self.ts = mf.ApproximateTimeSynchronizer([self.sub_odom, self.sub_tags], 10)
+        self.ts = mf.ApproximateTimeSynchronizer([self.sub_odom, self.sub_tags], 10, 1)
         self.ts.registerCallback(self.callback)
 
 
         self.B = "base_footprint"
         self.C = "usb_cam"
+        self.M = "map"
         self.O = "odom_combined"
         self.T = "tag"
-        self.BT = "tag_combined"
 
         self.T_B_C = Tx
-        self.T_O_T = np.eye(4)
-        self.T_BO_BT = np.eye(4)
+        self.T_O_B = np.eye(4)
+        self.T_F_O = np.eye(4)
 
+        tf = TransformMat2Msg(self.T_B_C, self.B, self.C)
+        self.static_broadcaster.sendTransform(tf)
+        
         ros.spin()
 
     def callback(self, msg_odom, msg_tags : AprilTagDetectionArray):
         cnt = len(msg_tags.detections)
+        self.T_O_B = TransformMsg2Mat(PoseStamped2Transform(msg_odom, self.B))
         if not self.flag:
-            if 1 == cnt:
+            if 0 == cnt:
+                ros.loginfo("No tag is detected yet, Fixed Frame init FAILED!")
+            else:
                 self.flag = True
+                ros.loginfo("Successfully get Robot Pose in Fixed Frame!")
                 
                 tag = msg_tags.detections[0]
-                
-        if not cnt:
-            print("No tag detected!")
-            tf_
-            tf.header.stamp = msg_tags.header.stamp
-            tf.child_frame_id = msg_tags.header.frame_id
-            tf.header.frame_id = msg_tags.child_frame_id
-        elif 1 == cnt:
-            if not self.flag:
-                self.flag = True
+                self.T_C_T = TransformMsg2Mat(AprilTagDetection2Transform(tag, self.T))
+                self.T_T_O = np.linalg.inv(np.dot(self.T_O_B, np.dot(self.T_B_C, self.T_C_T)))
 
-            tag = msg_tags.detections[0]
-            #header = tag.pose.header
+                tf = TransformMat2Msg(self.T_T_O, self.T, self.O)
+                self.broadcaster.sendTransform(tf)
 
-            pose_tag_in_cam = AprilTagDetection2PoseStamped(tag)
-            pose_cam_in_tag = Transform2PoseStamped(
-                                inverseTransform(
-                                  PoseStamped2Transform(pose_tag_in_cam, "tag")
-                                )
-                              )
-            try:
-                print("pose_tag_in_cam:\n", pose_tag_in_cam)
-                print("pose_cam_in_tag:\n", pose_cam_in_tag)
-                self.pub0.publish(Bool(True))
-                self.pub1.publish(pose_tag_in_cam)
-                self.pub2.publish(pose_cam_in_tag)
-            except ros.ROSInterruptException:
-                pass
+                self.T_T_B = np.dot(self.T_T_O, self.T_O_B)
+                pose = Transform2PoseStamped(TransformMat2Msg(self.T_T_B, self.T, self.B))
+                self.pub.publish(pose)
+                ros.loginfo(f"init_pose:\n{pose.pose}\n")                
         else:
-            print(f"{cnt} tags are detected!")
+            if cnt:
+                tag = msg_tags.detections[0]
+                self.T_C_T = TransformMsg2Mat(AprilTagDetection2Transform(tag, self.T))
+                self.T_T_O = np.linalg.inv(np.dot(self.T_O_B, np.dot(self.T_B_C, self.T_C_T)))
 
+            tf = TransformMat2Msg(self.T_T_O, self.T, self.O)
+            self.broadcaster.sendTransform(tf)
+            
+            self.T_T_B = np.dot(self.T_T_O, self.T_O_B)
+            pose = Transform2PoseStamped(TransformMat2Msg(self.T_T_B, self.T, self.B))
+            self.pub.publish(pose)
+                
 if "__main__" == __name__:
-    ros.init_node("fusion_location", anonymous=False)
+   ros.init_node("fusion_location", anonymous=False)
+   node = FusionLocation()
