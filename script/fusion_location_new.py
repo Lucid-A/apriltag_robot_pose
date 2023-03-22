@@ -56,12 +56,29 @@ class FusionLocation:
 
         tf = TransformMat2Msg(self.T_B_C, self.B, self.C)
         self.static_broadcaster.sendTransform(tf)
+
+        self.T_M_O = None
+        while self.T_M_O is None:
+            try:
+                self.T_M_O = TransformMsg2Mat(self.buffer.lookup_transform(self.M, self.O, ros.Time()))
+            except (tf2.LookupException, tf2.ConnectivityException, tf2.ExtrapolationException):
+                self.T_M_O = None
+                ros.loginfo(f"Didn't get Transfrom Matrix between /{self.M} and /{self.O}")
+            
+            for i in range(10):
+                self.rate.sleep()
         
         ros.spin()
 
     def callback(self, msg_odom, msg_tags : AprilTagDetectionArray):
         cnt = len(msg_tags.detections)
         self.T_O_B = TransformMsg2Mat(PoseStamped2Transform(msg_odom, self.B))
+        try:
+            self.T_M_O = TransformMsg2Mat(self.buffer.lookup_transform(self.M, self.O, ros.Time()))
+        except (tf2.LookupException, tf2.ConnectivityException, tf2.ExtrapolationException):
+            ros.loginfo(f"Didn't get Transfrom Matrix from /{self.M} and /{self.O}")
+            return
+
         if not self.flag:
             if 0 == cnt:
                 ros.loginfo("No tag is detected yet, Fixed Frame init FAILED!")
@@ -72,8 +89,10 @@ class FusionLocation:
                 tag = msg_tags.detections[0]
                 self.T_C_T = TransformMsg2Mat(AprilTagDetection2Transform(tag, self.T))
                 self.T_T_O = np.linalg.inv(np.dot(self.T_O_B, np.dot(self.T_B_C, self.T_C_T)))
+                self.T_T_M = np.dot(self.T_T_O, np.linalg.inv(self.T_M_O))
 
-                tf = TransformMat2Msg(self.T_T_O, self.T, self.O)
+                #tf = TransformMat2Msg(self.T_T_O, self.T, self.O)
+                tf = TransformMat2Msg(self.T_T_M, self.T, self.M)
                 self.broadcaster.sendTransform(tf)
 
                 self.T_T_B = np.dot(self.T_T_O, self.T_O_B)
@@ -85,8 +104,10 @@ class FusionLocation:
                 tag = msg_tags.detections[0]
                 self.T_C_T = TransformMsg2Mat(AprilTagDetection2Transform(tag, self.T))
                 self.T_T_O = np.linalg.inv(np.dot(self.T_O_B, np.dot(self.T_B_C, self.T_C_T)))
+                self.T_T_M = np.dot(self.T_T_O, np.linalg.inv(self.T_M_O))
 
-            tf = TransformMat2Msg(self.T_T_O, self.T, self.O)
+            #tf = TransformMat2Msg(self.T_T_O, self.T, self.O)
+            tf = TransformMat2Msg(self.T_T_M, self.T, self.M)
             self.broadcaster.sendTransform(tf)
             
             self.T_T_B = np.dot(self.T_T_O, self.T_O_B)
